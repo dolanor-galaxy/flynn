@@ -36,6 +36,17 @@ func (r *JobRepo) Add(job *ct.Job) error {
 		return err
 	}
 
+	// find most recent pending or running deployment for release if any
+	var deploymentID *string
+	rows, err := tx.Query("job_find_deployment", job.AppID, job.ReleaseID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	if rows.Next() {
+		rows.Scan(&deploymentID)
+	}
+
 	// TODO: actually validate
 	err = tx.QueryRow(
 		"job_insert",
@@ -71,7 +82,7 @@ func (r *JobRepo) Add(job *ct.Job) error {
 
 	// create a job event, ignoring possible duplications
 	uniqueID := strings.Join([]string{job.UUID, string(job.State)}, "|")
-	if err := tx.Exec("event_insert_unique", job.AppID, job.UUID, uniqueID, string(ct.EventTypeJob), job); err != nil {
+	if err := tx.Exec("event_insert_unique", job.AppID, deploymentID, job.UUID, uniqueID, string(ct.EventTypeJob), job); err != nil {
 		tx.Rollback()
 		return err
 	}

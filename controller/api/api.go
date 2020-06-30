@@ -583,8 +583,8 @@ func (req *ScaleRequest) ControllerType() *ct.ScaleRequest {
 func (csr *CreateScaleRequest) ControllerType() *ct.ScaleRequest {
 	return (&ScaleRequest{
 		Parent:       csr.Parent,
-		NewProcesses: csr.Processes,
-		NewTags:      csr.Tags,
+		NewProcesses: csr.Config.Processes,
+		NewTags:      csr.Config.Tags,
 	}).ControllerType()
 }
 
@@ -659,6 +659,29 @@ func (s DeploymentStatus) ControllerType() string {
 	}
 }
 
+func (from *CreateDeploymentRequest) ControllerType() *ct.CreateDeploymentConfig {
+	cdc := &ct.CreateDeploymentConfig{
+		AppID:     ParseIDFromName(from.Parent, "apps"),
+		ReleaseID: ParseIDFromName(from.Parent, "releases"),
+	}
+	if from.Config != nil {
+		if from.Config.Timeout != nil {
+			cdc.Timeout = &from.Config.Timeout.Value
+		}
+		if from.Config.BatchSize != nil {
+			bs := int(from.Config.BatchSize.Value)
+			cdc.BatchSize = &bs
+		}
+		if from.Config.ScaleConfig != nil {
+			p := NewControllerDeploymentProcesses(from.Config.ScaleConfig.Processes)
+			cdc.Processes = &p
+			t := NewControllerDeploymentTags(from.Config.ScaleConfig.Tags)
+			cdc.Tags = &t
+		}
+	}
+	return cdc
+}
+
 func NewExpandedDeployment(from *ct.ExpandedDeployment) *ExpandedDeployment {
 	convertReleaseType := func(releaseType ct.ReleaseType) ReleaseType {
 		switch releaseType {
@@ -675,7 +698,10 @@ func NewExpandedDeployment(from *ct.ExpandedDeployment) *ExpandedDeployment {
 	if from.OldRelease != nil {
 		oldRelease = NewRelease(from.OldRelease)
 	}
-	newRelease := NewRelease(from.NewRelease)
+	var newRelease *Release
+	if from.NewRelease != nil {
+		newRelease = NewRelease(from.NewRelease)
+	}
 	return &ExpandedDeployment{
 		Name:          fmt.Sprintf("apps/%s/deployments/%s", from.AppID, from.ID),
 		OldRelease:    oldRelease,
@@ -691,24 +717,112 @@ func NewExpandedDeployment(from *ct.ExpandedDeployment) *ExpandedDeployment {
 	}
 }
 
-func NewJobState(from ct.JobState) DeploymentEvent_JobState {
+func NewJobState(from ct.JobState) Job_JobState {
 	switch from {
 	case "pending":
-		return DeploymentEvent_PENDING
+		return Job_PENDING
 	case "blocked":
-		return DeploymentEvent_BLOCKED
+		return Job_BLOCKED
 	case "starting":
-		return DeploymentEvent_STARTING
+		return Job_STARTING
 	case "up":
-		return DeploymentEvent_UP
+		return Job_UP
 	case "stopping":
-		return DeploymentEvent_STOPPING
+		return Job_STOPPING
 	case "down":
-		return DeploymentEvent_DOWN
-	case "crashed":
-		return DeploymentEvent_CRASHED
-	case "failed":
-		return DeploymentEvent_FAILED
+		return Job_DOWN
 	}
-	return DeploymentEvent_PENDING
+	return Job_PENDING
+}
+
+func NewJob(from *ct.Job) *Job {
+	if from == nil {
+		return nil
+	}
+
+	var exitStatus *NullableInt32
+	if from.ExitStatus != nil {
+		exitStatus = &NullableInt32{Value: *from.ExitStatus}
+	}
+
+	var hostError string
+	if from.HostError != nil {
+		hostError = *from.HostError
+	}
+
+	var restarts *NullableInt32
+	if from.Restarts != nil {
+		restarts = &NullableInt32{Value: *from.Restarts}
+	}
+
+	return &Job{
+		Parent:         fmt.Sprintf("apps/%s/releases/%s", from.AppID, from.ReleaseID),
+		Name:           fmt.Sprintf("jobs/%s", from.UUID),
+		DeploymentName: fmt.Sprintf("apps/%s/deployments/%s", from.AppID, from.DeploymentID),
+		HostName:       fmt.Sprintf("hosts/%s", from.HostID),
+		Type:           from.Type,
+		State:          NewJobState(from.State),
+		Args:           from.Args,
+		VolumeIds:      from.VolumeIDs,
+		Labels:         from.Meta,
+		ExitStatus:     exitStatus,
+		HostError:      hostError,
+		RunTime:        NewTimestamp(from.RunAt),
+		Restarts:       restarts,
+		CreateTime:     NewTimestamp(from.CreatedAt),
+		UpdateTime:     NewTimestamp(from.UpdatedAt),
+	}
+}
+
+func NewEventOp(from ct.EventOp) Event_EventOp {
+	switch from {
+	case ct.EventOpCreate:
+		return Event_CREATE
+	case ct.EventOpUpdate:
+		return Event_UPDATE
+	default:
+		return Event_ANY
+	}
+}
+
+func NewEvent(from *ct.ExpandedEvent) *Event {
+	if from == nil {
+		return nil
+	}
+
+	var data isEvent_Data
+	var parentName string
+	switch from.ObjectType {
+	case "deployment":
+		if from.Deployment == nil {
+			return nil
+		}
+		parentName = fmt.Sprintf("apps/%s/deployments/%s", from.AppID, from.Deployment.ID)
+		data = &Event_Deployment{
+			Deployment: NewExpandedDeployment(from.Deployment),
+		}
+	case "job":
+		if from.Job == nil {
+			return nil
+		}
+		parentName = fmt.Sprintf("jobs/%s", from.ObjectID)
+		data = &Event_Job{
+			Job: NewJob(from.Job),
+		}
+	}
+
+	var deploymentName string
+	if from.Deployment != nil {
+		deploymentName = fmt.Sprintf("apps/%s/deployments/%s", from.AppID, from.Deployment.ID)
+	}
+
+	return &Event{
+		Parent:         parentName,
+		Name:           fmt.Sprintf("events/%d", from.ID),
+		DeploymentName: deploymentName,
+		Type:           string(from.ObjectType),
+		Op:             NewEventOp(from.Op),
+		CreateTime:     NewTimestamp(from.CreatedAt),
+		Data:           data,
+	}
 }

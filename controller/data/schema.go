@@ -950,13 +950,19 @@ CREATE TRIGGER set_tcp_route_port
 		`ALTER TABLE deployments ALTER COLUMN type SET NOT NULL`,
 	)
 	migrations.Add(48, `
-CREATE FUNCTION deployment_status(deployment_id uuid) RETURNS text AS $$
-  SELECT data->>'status' FROM events WHERE object_type = 'deployment' AND object_id::uuid = deployment_id ORDER BY created_at DESC LIMIT 1;
+CREATE FUNCTION deployment_status(d_id uuid) RETURNS text AS $$
+  SELECT data->>'status' FROM events WHERE object_type = 'deployment' AND object_id::uuid = d_id ORDER BY created_at DESC LIMIT 1;
 $$ LANGUAGE SQL;
 	`)
 	migrations.Add(49, `
 ALTER TABLE http_routes ADD COLUMN disable_keep_alives boolean NOT NULL DEFAULT false;
 	`)
+	migrations.Add(50,
+		`ALTER TABLE events ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
+		// TODO(jvatic): associate all existing job events with a deployment
+		// TODO(jvatic): associate all existing scale events with a deployment
+		// TODO(jvatic): convert all event.data to an expadned deployment where it is a deployment
+	)
 }
 
 func MigrateDB(db *postgres.DB) error {

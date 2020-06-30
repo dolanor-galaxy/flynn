@@ -22,7 +22,7 @@ func NewEventRepo(db *postgres.DB) *EventRepo {
 }
 
 func (r *EventRepo) ListEvents(appIDs, objectTypes, objectIDs []string, beforeID *int64, sinceID *int64, count int) ([]*ct.Event, error) {
-	query := "SELECT event_id, app_id, object_id, object_type, data, op, created_at FROM events"
+	query := "SELECT event_id, app_id, deployment_id, object_id, object_type, data, op, created_at FROM events"
 	var conditions []string
 	var n int
 	args := []interface{}{}
@@ -84,6 +84,53 @@ func (r *EventRepo) ListEvents(appIDs, objectTypes, objectIDs []string, beforeID
 	return events, rows.Err()
 }
 
+type ListEventOptions struct {
+	PageToken     PageToken
+	AppIDs        []string
+	DeploymentIDs []string
+	ObjectTypes   []ct.EventType
+}
+
+func (r *EventRepo) ListPage(opts ListEventOptions) ([]*ct.ExpandedEvent, *PageToken, error) {
+	pageSize := DEFAULT_PAGE_SIZE
+	if opts.PageToken.Size > 0 {
+		pageSize = opts.PageToken.Size
+	}
+	objectTypes := make([]string, len(opts.ObjectTypes))
+	for i, t := range opts.ObjectTypes {
+		objectTypes[i] = string(t)
+	}
+	cursor, err := opts.PageToken.Cursor()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := r.db.Query("event_list_page", cursor, opts.AppIDs, opts.DeploymentIDs, objectTypes, pageSize+1)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var events []*ct.ExpandedEvent
+	for rows.Next() {
+		event, err := scanExpandedEvent(rows)
+		if err != nil {
+			return nil, nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	var nextPageToken *PageToken
+	if len(events) == pageSize+1 {
+		nextPageToken = &PageToken{
+			CursorID: toCursorID(events[pageSize].CreatedAt),
+			Size:     pageSize,
+		}
+		events = events[0:pageSize]
+	}
+	return events, nextPageToken, nil
+}
+
 func (r *EventRepo) GetEvent(id int64) (*ct.Event, error) {
 	row := r.db.QueryRow("event_select", id)
 	return scanEvent(row)
@@ -94,8 +141,9 @@ func scanEvent(s postgres.Scanner) (*ct.Event, error) {
 	var typ string
 	var data []byte
 	var appID *string
+	var deploymentID *string
 	var op *string
-	err := s.Scan(&event.ID, &appID, &event.ObjectID, &typ, &data, &op, &event.CreatedAt)
+	err := s.Scan(&event.ID, &appID, &deploymentID, &event.ObjectID, &typ, &data, &op, &event.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			err = ErrNotFound
@@ -105,6 +153,9 @@ func scanEvent(s postgres.Scanner) (*ct.Event, error) {
 	if appID != nil {
 		event.AppID = *appID
 	}
+	if deploymentID != nil {
+		event.DeploymentID = *deploymentID
+	}
 	if data == nil {
 		data = []byte("null")
 	}
@@ -113,6 +164,141 @@ func scanEvent(s postgres.Scanner) (*ct.Event, error) {
 	}
 	event.ObjectType = ct.EventType(typ)
 	event.Data = json.RawMessage(data)
+	return &event, nil
+}
+
+func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
+	// Event
+	var event ct.ExpandedEvent
+	var typ string
+	var appID *string
+	var op *string
+
+	// ExpandedDeployment
+	d := &ct.ExpandedDeployment{}
+	var deploymentID *string
+	var deploymentAppID *string
+	var deploymentStrategy *string
+	var deploymentStatus *string
+	var deploymentType *ct.ReleaseType
+	var deploymentTimeout *int32
+	oldRelease := &ct.Release{}
+	newRelease := &ct.Release{}
+	var oldArtifactIDs *string
+	var newArtifactIDs *string
+	var oldReleaseID *string
+	var newReleaseID *string
+
+	// Job
+	job := &ct.Job{}
+	var jobID *string
+	var jobUUID *string
+	var jobHostID *string
+	var jobAppID *string
+	var jobReleaseID *string
+	var jobType *string
+	var jobState *string
+	var jobVolumeIDs *string
+
+	err := s.Scan(
+		// Event
+		&event.ID, &appID, &event.ObjectID, &typ, &op, &event.CreatedAt,
+
+		// ExpandedDeployment
+		&deploymentID, &deploymentAppID, &oldReleaseID, &newReleaseID, &deploymentStrategy, &deploymentStatus, &d.Processes, &d.Tags, &deploymentTimeout, &d.DeployBatchSize, &d.CreatedAt, &d.FinishedAt,
+		&oldArtifactIDs, &oldRelease.Env, &oldRelease.Processes, &oldRelease.Meta, &oldRelease.CreatedAt,
+		&newArtifactIDs, &newRelease.Env, &newRelease.Processes, &newRelease.Meta, &newRelease.CreatedAt,
+		&deploymentType,
+
+		// Job
+		&jobID, &jobUUID, &jobHostID, &jobAppID, &jobReleaseID, &jobType, &jobState, &job.Meta, &job.ExitStatus, &job.HostError, &job.RunAt, &job.Restarts, &job.CreatedAt, &job.UpdatedAt, &job.Args, &jobVolumeIDs,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			err = ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Event
+	if appID != nil {
+		event.AppID = *appID
+	}
+	if op != nil {
+		event.Op = ct.EventOp(*op)
+	}
+	event.ObjectType = ct.EventType(typ)
+
+	// ExpandedDeployment
+	if deploymentID != nil {
+		d.ID = *deploymentID
+	}
+	if deploymentAppID != nil {
+		d.AppID = *deploymentAppID
+	}
+	if oldReleaseID != nil {
+		oldRelease.ID = *oldReleaseID
+		oldRelease.AppID = d.AppID
+		if oldArtifactIDs != nil && *oldArtifactIDs != "" {
+			oldRelease.ArtifactIDs = splitPGStringArray(*oldArtifactIDs)
+		}
+		d.OldRelease = oldRelease
+	}
+	if newReleaseID != nil {
+		newRelease.ID = *newReleaseID
+		newRelease.AppID = d.AppID
+		if newArtifactIDs != nil && *newArtifactIDs != "" {
+			newRelease.ArtifactIDs = splitPGStringArray(*newArtifactIDs)
+		}
+		d.NewRelease = newRelease
+	}
+	if deploymentStrategy != nil {
+		d.Strategy = *deploymentStrategy
+	}
+	if deploymentStatus != nil {
+		d.Status = *deploymentStatus
+	}
+	if deploymentType != nil {
+		d.Type = *deploymentType
+	}
+	if deploymentTimeout != nil {
+		d.DeployTimeout = *deploymentTimeout
+	}
+
+	// Job
+	if jobID != nil {
+		job.ID = *jobID
+	}
+	if jobUUID != nil {
+		job.UUID = *jobUUID
+	}
+	if jobHostID != nil {
+		job.HostID = *jobHostID
+	}
+	if jobAppID != nil {
+		job.AppID = *jobAppID
+	}
+	if jobReleaseID != nil {
+		job.ReleaseID = *jobReleaseID
+	}
+	if jobType != nil {
+		job.Type = *jobType
+	}
+	if jobState != nil {
+		job.State = ct.JobState(*jobState)
+	}
+	if jobVolumeIDs != nil && *jobVolumeIDs != "" {
+		job.VolumeIDs = splitPGStringArray(*jobVolumeIDs)
+	}
+
+	if d.ID != "" {
+		event.Deployment = d
+	}
+
+	if job.UUID != "" {
+		event.Job = job
+	}
+
 	return &event, nil
 }
 
@@ -130,11 +316,12 @@ type EventSubscriber struct {
 	Err     error
 	errOnce sync.Once
 
-	l           *EventListener
-	queue       chan *ct.Event
-	appIDs      []string
-	objectTypes []string
-	objectIDs   []string
+	l             *EventListener
+	queue         chan *ct.Event
+	appIDs        []string
+	deploymentIDs []string
+	objectTypes   []string
+	objectIDs     []string
 
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -171,6 +358,18 @@ func (e *EventSubscriber) Notify(event *ct.Event) {
 		matchesID := false
 		for _, objectID := range e.objectIDs {
 			if objectID == event.ObjectID {
+				matchesID = true
+				break
+			}
+		}
+		if !matchesID {
+			return
+		}
+	}
+	if len(e.deploymentIDs) > 0 {
+		matchesID := false
+		for _, deploymentID := range e.deploymentIDs {
+			if deploymentID == event.DeploymentID {
 				matchesID = true
 				break
 			}
@@ -233,22 +432,48 @@ type EventListener struct {
 	doneCh    chan struct{}
 }
 
+type EventSubscriptionOpts struct {
+	AppIDs        []string
+	DeploymentIDs []string
+	ObjectTypes   []ct.EventType
+	ObjectIDs     []string
+}
+
 // Subscribe creates and returns an EventSubscriber for the given apps, types and objects.
 // An empty appIDs list subscribes to all apps
 func (e *EventListener) Subscribe(appIDs, objectTypes, objectIDs []string) (*EventSubscriber, error) {
+	ctObjectTypes := make([]ct.EventType, len(objectTypes))
+	for i, t := range objectTypes {
+		ctObjectTypes[i] = ct.EventType(t)
+	}
+	return e.SubscribeWithOpts(&EventSubscriptionOpts{
+		AppIDs:      appIDs,
+		ObjectTypes: ctObjectTypes,
+		ObjectIDs:   objectIDs,
+	})
+}
+
+// SubscribeWithOpts creates and returns an EventSubscriber for the given opts.
+// An empty ID list subscribes to all
+func (e *EventListener) SubscribeWithOpts(opts *EventSubscriptionOpts) (*EventSubscriber, error) {
 	e.subMtx.Lock()
 	defer e.subMtx.Unlock()
 	if e.IsClosed() {
 		return nil, errors.New("event listener closed")
 	}
+	objectTypeStrings := make([]string, len(opts.ObjectTypes))
+	for i, t := range opts.ObjectTypes {
+		objectTypeStrings[i] = string(t)
+	}
 	s := &EventSubscriber{
-		Events:      make(chan *ct.Event),
-		l:           e,
-		queue:       make(chan *ct.Event, eventBufferSize),
-		stop:        make(chan struct{}),
-		appIDs:      appIDs,
-		objectTypes: objectTypes,
-		objectIDs:   objectIDs,
+		Events:        make(chan *ct.Event),
+		l:             e,
+		queue:         make(chan *ct.Event, eventBufferSize),
+		stop:          make(chan struct{}),
+		appIDs:        opts.AppIDs,
+		deploymentIDs: opts.DeploymentIDs,
+		objectTypes:   objectTypeStrings,
+		objectIDs:     opts.ObjectIDs,
 	}
 	go s.loop()
 	e.subscribers[s] = struct{}{}

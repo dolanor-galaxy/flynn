@@ -170,10 +170,11 @@ func (r *FormationRepo) AddScaleRequest(req *ct.ScaleRequest, deleteFormation bo
 
 	// emit a scale request event so clients know scaling has begun
 	if err := CreateEvent(tx.Exec, &ct.Event{
-		AppID:      req.AppID,
-		ObjectID:   req.ID,
-		ObjectType: ct.EventTypeScaleRequest,
-		Op:         ct.EventOpCreate,
+		AppID:        req.AppID,
+		DeploymentID: req.DeploymentID,
+		ObjectID:     req.ID,
+		ObjectType:   ct.EventTypeScaleRequest,
+		Op:           ct.EventOpCreate,
 	}, req); err != nil {
 		tx.Rollback()
 		return nil, err
@@ -181,10 +182,11 @@ func (r *FormationRepo) AddScaleRequest(req *ct.ScaleRequest, deleteFormation bo
 	// emit a scale request event for each one we canceled
 	for _, s := range canceledScaleRequests {
 		if err := CreateEvent(tx.Exec, &ct.Event{
-			AppID:      s.AppID,
-			ObjectID:   s.ID,
-			ObjectType: ct.EventTypeScaleRequestCancelation,
-			Op:         ct.EventOpUpdate,
+			AppID:        s.AppID,
+			DeploymentID: req.DeploymentID,
+			ObjectID:     s.ID,
+			ObjectType:   ct.EventTypeScaleRequestCancelation,
+			Op:           ct.EventOpUpdate,
 		}, s); err != nil {
 			tx.Rollback()
 			return nil, err
@@ -408,10 +410,11 @@ func (r *FormationRepo) UpdateScaleRequest(req *ct.ScaleRequest) error {
 		return err
 	}
 	if err := CreateEvent(tx.Exec, &ct.Event{
-		AppID:      req.AppID,
-		ObjectID:   req.ID,
-		ObjectType: ct.EventTypeScaleRequest,
-		Op:         ct.EventOpUpdate,
+		AppID:        req.AppID,
+		DeploymentID: req.DeploymentID,
+		ObjectID:     req.ID,
+		ObjectType:   ct.EventTypeScaleRequest,
+		Op:           ct.EventOpUpdate,
 	}, req); err != nil {
 		tx.Rollback()
 		return err
