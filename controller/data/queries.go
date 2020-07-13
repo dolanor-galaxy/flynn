@@ -46,6 +46,7 @@ var preparedStatements = map[string]string{
 	"deployment_update_finished_at_now":     deploymentUpdateFinishedAtNowQuery,
 	"deployment_delete":                     deploymentDeleteQuery,
 	"event_select":                          eventSelectQuery,
+	"event_select_expanded":                 eventSelectExpandedQuery,
 	"event_insert":                          eventInsertQuery,
 	"event_insert_op":                       eventInsertOpQuery,
 	"event_insert_unique":                   eventInsertUniqueQuery,
@@ -341,6 +342,45 @@ LIMIT $6
 	eventSelectQuery = `
 SELECT event_id, app_id, deployment_id, object_id, object_type, data, op, created_at
 FROM events WHERE event_id = $1`
+	eventSelectExpandedQuery = `
+SELECT e.event_id, e.app_id, e.object_id, e.object_type, e.data, e.op, e.created_at,
+
+	d.deployment_id, d.app_id, d.old_release_id, d.new_release_id, d.strategy, deployment_status(d.deployment_id),
+  d.processes, d.tags, d.deploy_timeout, d.deploy_batch_size, d.created_at, d.finished_at,
+  ARRAY(
+    SELECT a.artifact_id
+    FROM release_artifacts a
+    WHERE a.release_id = old_r.release_id AND a.deleted_at IS NULL
+    ORDER BY a.index
+  ) AS old_artifact_ids, old_r.env, old_r.processes, old_r.meta, old_r.created_at,
+  ARRAY(
+    SELECT a.artifact_id
+    FROM release_artifacts a
+    WHERE a.release_id = new_r.release_id AND a.deleted_at IS NULL
+    ORDER BY a.index
+  ) AS new_artifact_ids, new_r.env, new_r.processes, new_r.meta, new_r.created_at,
+  d.type,
+
+  j.cluster_id, j.job_id, j.host_id, j.app_id, j.release_id, j.process_type, j.state, j.meta,
+  j.exit_status, j.host_error, j.run_at, j.restarts, j.created_at, j.updated_at, j.args,
+  ARRAY(
+    SELECT job_volumes.volume_id
+    FROM job_volumes
+    WHERE job_volumes.job_id = j.job_id
+    ORDER BY job_volumes.index
+  )
+FROM events e
+LEFT OUTER JOIN deployments d
+	ON d.deployment_id = e.deployment_id
+LEFT OUTER JOIN releases old_r
+  ON d.old_release_id = old_r.release_id
+LEFT OUTER JOIN releases new_r
+  ON d.new_release_id = new_r.release_id
+LEFT OUTER JOIN job_cache j
+	ON e.object_type = 'job' AND j.job_id::text = e.object_id
+WHERE e.event_id = $1
+LIMIT 1
+	`
 	eventInsertQuery = `
 INSERT INTO events (app_id, object_id, object_type, data)
 VALUES ($1, $2, $3, $4)`
@@ -351,7 +391,7 @@ VALUES ($1, $2, $3, $4, $5, $6)`
 INSERT INTO events (app_id, deployment_id, object_id, unique_id, object_type, data)
 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (unique_id) DO NOTHING`
 	eventListPageQuery = `
-SELECT e.event_id, e.app_id, e.object_id, e.object_type, e.op, e.created_at,
+SELECT e.event_id, e.app_id, e.object_id, e.object_type, e.data, e.op, e.created_at,
 
 	d.deployment_id, d.app_id, d.old_release_id, d.new_release_id, d.strategy, deployment_status(d.deployment_id),
   d.processes, d.tags, d.deploy_timeout, d.deploy_batch_size, d.created_at, d.finished_at,

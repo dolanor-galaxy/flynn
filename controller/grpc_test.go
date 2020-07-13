@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 	"sync"
+	"time"
 
 	"github.com/flynn/flynn/controller/api"
 	"github.com/flynn/flynn/controller/data"
@@ -197,6 +197,12 @@ func (s *GRPCSuite) createTestJob(c *C, d *api.ExpandedDeployment, j *ct.Job) *c
 	j.AppID = api.ParseIDFromName(d.Name, "apps")
 	j.DeploymentID = api.ParseIDFromName(d.Name, "deployments")
 	j.ReleaseID = api.ParseIDFromName(d.NewRelease.Name, "releases")
+	if j.UUID == "" {
+		j.UUID = random.UUID()
+	}
+	if j.State == "" {
+		j.State = ct.JobStatePending
+	}
 	c.Assert(s.api.jobRepo.Add(j), IsNil)
 	return j
 }
@@ -1304,12 +1310,12 @@ func (s *GRPCSuite) TestStreamDeploymentEvents(c *C) {
 	})
 	testDeployment1 := s.createTestDeployment(c, testRelease1.Name)
 
-	streamEvents := func (req *api.StreamDeploymentEventsRequest) (api.Controller_StreamDeploymentEventsClient, func (), error) {
+	streamEvents := func(req *api.StreamDeploymentEventsRequest) (api.Controller_StreamDeploymentEventsClient, func(), error) {
 		ctx, _ := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		stream, err := s.grpc.StreamDeploymentEvents(ctx, req)
 		var closeOnce sync.Once
-		closeFunc := func () {
-			closeOnce.Do(func () {
+		closeFunc := func() {
+			closeOnce.Do(func() {
 				stream.CloseSend()
 			})
 		}

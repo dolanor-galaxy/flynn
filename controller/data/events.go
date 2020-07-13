@@ -136,6 +136,11 @@ func (r *EventRepo) GetEvent(id int64) (*ct.Event, error) {
 	return scanEvent(row)
 }
 
+func (r *EventRepo) GetExpandedEvent(id int64) (*ct.ExpandedEvent, error) {
+	row := r.db.QueryRow("event_select_expanded", id)
+	return scanExpandedEvent(row)
+}
+
 func scanEvent(s postgres.Scanner) (*ct.Event, error) {
 	var event ct.Event
 	var typ string
@@ -172,6 +177,7 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 	var event ct.ExpandedEvent
 	var typ string
 	var appID *string
+	var data []byte
 	var op *string
 
 	// ExpandedDeployment
@@ -202,7 +208,7 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 
 	err := s.Scan(
 		// Event
-		&event.ID, &appID, &event.ObjectID, &typ, &op, &event.CreatedAt,
+		&event.ID, &appID, &event.ObjectID, &typ, &data, &op, &event.CreatedAt,
 
 		// ExpandedDeployment
 		&deploymentID, &deploymentAppID, &oldReleaseID, &newReleaseID, &deploymentStrategy, &deploymentStatus, &d.Processes, &d.Tags, &deploymentTimeout, &d.DeployBatchSize, &d.CreatedAt, &d.FinishedAt,
@@ -228,6 +234,7 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 		event.Op = ct.EventOp(*op)
 	}
 	event.ObjectType = ct.EventType(typ)
+	event.Data = json.RawMessage(data)
 
 	// ExpandedDeployment
 	if deploymentID != nil {
@@ -312,12 +319,12 @@ const eventBufferSize = 1000
 // EventSubscriber receives events from the EventListener loop and maintains
 // it's own loop to forward those events to the Events channel.
 type EventSubscriber struct {
-	Events  chan *ct.Event
+	Events  chan *ct.ExpandedEvent
 	Err     error
 	errOnce sync.Once
 
 	l             *EventListener
-	queue         chan *ct.Event
+	queue         chan *ct.ExpandedEvent
 	appIDs        []string
 	deploymentIDs []string
 	objectTypes   []string
@@ -329,7 +336,7 @@ type EventSubscriber struct {
 
 // Notify filters the event based on it's appID, type and objectID and then
 // pushes it to the event queue.
-func (e *EventSubscriber) Notify(event *ct.Event) {
+func (e *EventSubscriber) Notify(event *ct.ExpandedEvent) {
 	if len(e.appIDs) > 0 {
 		matchesApp := false
 		for _, appID := range e.appIDs {
@@ -368,10 +375,12 @@ func (e *EventSubscriber) Notify(event *ct.Event) {
 	}
 	if len(e.deploymentIDs) > 0 {
 		matchesID := false
-		for _, deploymentID := range e.deploymentIDs {
-			if deploymentID == event.DeploymentID {
-				matchesID = true
-				break
+		if event.Deployment != nil {
+			for _, deploymentID := range e.deploymentIDs {
+				if deploymentID == event.Deployment.ID {
+					matchesID = true
+					break
+				}
 			}
 		}
 		if !matchesID {
@@ -466,9 +475,9 @@ func (e *EventListener) SubscribeWithOpts(opts *EventSubscriptionOpts) (*EventSu
 		objectTypeStrings[i] = string(t)
 	}
 	s := &EventSubscriber{
-		Events:        make(chan *ct.Event),
+		Events:        make(chan *ct.ExpandedEvent),
 		l:             e,
-		queue:         make(chan *ct.Event, eventBufferSize),
+		queue:         make(chan *ct.ExpandedEvent, eventBufferSize),
 		stop:          make(chan struct{}),
 		appIDs:        opts.AppIDs,
 		deploymentIDs: opts.DeploymentIDs,
@@ -514,7 +523,7 @@ func (e *EventListener) Listen() error {
 					log.Error(fmt.Sprintf("invalid event notification: %q", n.Payload), "err", err)
 					continue
 				}
-				event, err := e.eventRepo.GetEvent(id)
+				event, err := e.eventRepo.GetExpandedEvent(id)
 				if err != nil {
 					log.Error(fmt.Sprintf("invalid event notification: %q", n.Payload), "err", err)
 					continue
@@ -530,7 +539,7 @@ func (e *EventListener) Listen() error {
 }
 
 // Notify notifies all sbscribers of the given event.
-func (e *EventListener) Notify(event *ct.Event) {
+func (e *EventListener) Notify(event *ct.ExpandedEvent) {
 	e.subMtx.RLock()
 	defer e.subMtx.RUnlock()
 	for sub := range e.subscribers {

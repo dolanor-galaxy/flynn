@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	fmt "fmt"
 	"net"
 	"strings"
 	"sync"
@@ -269,7 +268,7 @@ func (g *grpcAPI) StreamApps(req *api.StreamAppsRequest, stream api.Controller_S
 		return nil
 	}
 
-	maybeSendApp := func(event *ct.Event, app *api.App) {
+	maybeSendApp := func(event *ct.ExpandedEvent, app *api.App) {
 		shouldSend := false
 		if (req.StreamCreates && event.Op == ct.EventOpCreate) || (req.StreamUpdates && event.Op == ct.EventOpUpdate) || (req.StreamUpdates && event.ObjectType == ct.EventTypeAppRelease) {
 			shouldSend = api.MatchLabelFilters(app.Labels, req.GetLabelFilters())
@@ -528,7 +527,7 @@ func (g *grpcAPI) StreamScales(req *api.StreamScalesRequest, stream api.Controll
 		scaleIDsMap[scaleID] = struct{}{}
 	}
 
-	unmarshalScaleRequest := func(event *ct.Event) (*api.ScaleRequest, error) {
+	unmarshalScaleRequest := func(event *ct.ExpandedEvent) (*api.ScaleRequest, error) {
 		var ctReq *ct.ScaleRequest
 		if err := json.Unmarshal(event.Data, &ctReq); err != nil {
 			return nil, api.NewError(err, err.Error())
@@ -662,7 +661,7 @@ func (g *grpcAPI) StreamReleases(req *api.StreamReleasesRequest, stream api.Cont
 		return nil
 	}
 
-	unmarshalRelease := func(event *ct.Event) (*api.Release, error) {
+	unmarshalRelease := func(event *ct.ExpandedEvent) (*api.Release, error) {
 		var ctRelease *ct.Release
 		if err := json.Unmarshal(event.Data, &ctRelease); err != nil {
 			return nil, api.NewError(err, err.Error())
@@ -670,7 +669,7 @@ func (g *grpcAPI) StreamReleases(req *api.StreamReleasesRequest, stream api.Cont
 		return api.NewRelease(ctRelease), nil
 	}
 
-	maybeAcceptRelease := func(event *ct.Event) (release *api.Release, accepted bool) {
+	maybeAcceptRelease := func(event *ct.ExpandedEvent) (release *api.Release, accepted bool) {
 		r, err := unmarshalRelease(event)
 		if err != nil {
 			logger.Error("error unmarshalling event", "rpcMethod", "StreamReleases", "event_id", event.ID, "error", err)
@@ -947,7 +946,6 @@ func (g *grpcAPI) StreamDeploymentEvents(req *api.StreamDeploymentEventsRequest,
 		return
 	}
 
-outer:
 	for {
 		select {
 		case event, ok := <-sub.Events:
@@ -956,39 +954,8 @@ outer:
 				return
 			}
 
-			var deploymentName string
-			if event.DeploymentID != "" {
-				deploymentName = fmt.Sprintf("apps/%s/deployments/%s", event.AppID, event.DeploymentID)
-			}
-			apiEvent := &api.Event{
-				Name:           fmt.Sprintf("events/%d", event.ID),
-				Type:           string(event.ObjectType),
-				DeploymentName: deploymentName,
-				CreateTime:     api.NewTimestamp(event.CreatedAt),
-			}
-
-			switch event.ObjectType {
-			case "deployment":
-				ed, err := g.deploymentRepo.GetExpanded(event.DeploymentID)
-				if err != nil {
-					logger.Error("failed to fetch expanded deployment for event", "event_id", event.ID, "deployment_id", event.ObjectID, "error", err)
-					continue outer
-				}
-				apiEvent.Parent = deploymentName
-				apiEvent.Data = &api.Event_Deployment{Deployment: api.NewExpandedDeployment(ed)}
-
-			case "job":
-				var job *ct.Job
-				if err := json.Unmarshal(event.Data, &job); err != nil {
-					logger.Error("failed to unmarshal job event", "event_id", event.ID, "deployment_id", event.DeploymentID, "job_uuid", event.UniqueID, "error", err)
-					continue outer
-				}
-				apiEvent.Parent = fmt.Sprintf("jobs/%s", event.UniqueID)
-				apiEvent.Data = &api.Event_Job{Job: api.NewJob(job)}
-			}
-
 			stream.Send(&api.StreamDeploymentEventsResponse{
-				Events: []*api.Event{apiEvent},
+				Events: []*api.Event{api.NewEvent(event)},
 			})
 		case <-stream.Context().Done():
 			err = stream.Context().Err()
@@ -1047,12 +1014,9 @@ outer:
 				continue outer
 			}
 
-			deploymentName := fmt.Sprintf("apps/%s/deployments/%s", event.AppID, event.DeploymentID)
-			apiEvent := &api.Event{
-				Name:           fmt.Sprintf("events/%d", event.ID),
-				Type:           string(event.ObjectType),
-				DeploymentName: deploymentName,
-				CreateTime:     api.NewTimestamp(event.CreatedAt),
+			var deploymentID string
+			if event.Deployment != nil {
+				deploymentID = event.Deployment.ID
 			}
 			var de *ct.DeploymentEvent
 			switch event.ObjectType {
@@ -1062,24 +1026,14 @@ outer:
 					continue outer
 				}
 
-				ed, err := g.deploymentRepo.GetExpanded(event.DeploymentID)
-				if err != nil {
-					logger.Error("failed to fetch expanded deployment for event", "event_id", event.ID, "deployment_id", event.ObjectID, "error", err)
-					continue outer
-				}
-				apiEvent.Parent = deploymentName
-				apiEvent.Data = &api.Event_Deployment{Deployment: api.NewExpandedDeployment(ed)}
-
 			case "job":
 				var job *ct.Job
 				if err := json.Unmarshal(event.Data, &job); err != nil {
-					logger.Error("failed to unmarshal job event", "event_id", event.ID, "deployment_id", event.DeploymentID, "job_uuid", event.UniqueID, "error", err)
+					logger.Error("failed to unmarshal job event", "event_id", event.ID, "deployment_id", deploymentID, "job_uuid", event.UniqueID, "error", err)
 					continue outer
 				}
-				apiEvent.Parent = fmt.Sprintf("jobs/%s", event.UniqueID)
-				apiEvent.Data = &api.Event_Job{Job: api.NewJob(job)}
 			}
-			ds.Send(apiEvent)
+			ds.Send(api.NewEvent(event))
 
 			if de != nil {
 				if de.Status == "failed" {

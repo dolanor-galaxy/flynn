@@ -558,8 +558,30 @@ type ExpandedEvent struct {
 	UniqueID   string              `json:"-"`
 	Deployment *ExpandedDeployment `json:"deployment,omitempty"`
 	Job        *Job                `json:"job,omitempty"`
+	Data       json.RawMessage     `json:"-"`
 	Op         EventOp             `json:"-"`
 	CreatedAt  *time.Time          `json:"created_at,omitempty"`
+}
+
+func (ee *ExpandedEvent) Event() *Event {
+	if ee == nil {
+		return nil
+	}
+	var deploymentID string
+	if ee.Deployment != nil {
+		deploymentID = ee.Deployment.ID
+	}
+	return &Event{
+		ID:           ee.ID,
+		AppID:        ee.AppID,
+		DeploymentID: deploymentID,
+		ObjectType:   ee.ObjectType,
+		ObjectID:     ee.ObjectID,
+		UniqueID:     ee.UniqueID,
+		Data:         ee.Data,
+		Op:           ee.Op,
+		CreatedAt:    ee.CreatedAt,
+	}
 }
 
 type ScaleRequest struct {
