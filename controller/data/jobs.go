@@ -46,6 +46,12 @@ func (r *JobRepo) Add(job *ct.Job) error {
 	if rows.Next() {
 		rows.Scan(&deploymentID)
 	}
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		tx.Rollback()
+		return err
+	}
 
 	// TODO: actually validate
 	err = tx.QueryRow(
