@@ -1340,11 +1340,11 @@ func (s *GRPCSuite) TestStreamDeploymentEvents(c *C) {
 	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
 	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeDeployment))
 
-	s.createTestJob(c, testDeployment1, &ct.Job{})
+	testJob1 := api.NewJob(s.createTestJob(c, testDeployment1, &ct.Job{}))
 	res, err = stream.Recv()
 	c.Assert(err, IsNil)
 	c.Assert(len(res.Events), Equals, 1)
-	c.Assert(res.Events[0].Parent, Equals, testDeployment1.Name)
+	c.Assert(res.Events[0].Parent, Equals, testJob1.Name)
 	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
 	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeJob))
 
