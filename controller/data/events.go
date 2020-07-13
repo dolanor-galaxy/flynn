@@ -206,6 +206,15 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 	var jobState *string
 	var jobVolumeIDs *string
 
+	// ScaleRequest
+	sr := &ct.ScaleRequest{}
+	var srID *string
+	var srAppID *string
+	var srReleaseID *string
+	var srState *ct.ScaleRequestState
+	var srOldProcesses *map[string]int
+	var srOldTags *map[string]map[string]string
+
 	err := s.Scan(
 		// Event
 		&event.ID, &appID, &event.ObjectID, &typ, &data, &op, &event.CreatedAt,
@@ -218,6 +227,9 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 
 		// Job
 		&jobID, &jobUUID, &jobHostID, &jobAppID, &jobReleaseID, &jobType, &jobState, &job.Meta, &job.ExitStatus, &job.HostError, &job.RunAt, &job.Restarts, &job.CreatedAt, &job.UpdatedAt, &job.Args, &jobVolumeIDs,
+
+		// ScaleRequest
+		&srID, &srAppID, &srReleaseID, &srState, &srOldProcesses, &sr.NewProcesses, &srOldTags, &sr.NewTags, &sr.CreatedAt, &sr.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -304,6 +316,27 @@ func scanExpandedEvent(s postgres.Scanner) (*ct.ExpandedEvent, error) {
 
 	if job.UUID != "" {
 		event.Job = job
+	}
+
+	// ScaleRequest
+	if srID != nil {
+		sr.ID = *srID
+		event.ScaleRequest = sr
+	}
+	if srAppID != nil {
+		sr.AppID = *srAppID
+	}
+	if srReleaseID != nil {
+		sr.ReleaseID = *srReleaseID
+	}
+	if srState != nil {
+		sr.State = ct.ScaleRequestState(*srState)
+	}
+	if srOldProcesses != nil {
+		sr.OldProcesses = *srOldProcesses
+	}
+	if srOldTags != nil {
+		sr.OldTags = *srOldTags
 	}
 
 	return &event, nil

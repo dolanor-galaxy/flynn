@@ -193,7 +193,7 @@ func (s *GRPCSuite) createTestDeploymentEvent(c *C, d *api.ExpandedDeployment, e
 	}, e), IsNil)
 }
 
-func (s *GRPCSuite) createTestJob(c *C, d *api.ExpandedDeployment, j *ct.Job) *ct.Job {
+func (s *GRPCSuite) createTestJob(c *C, d *api.ExpandedDeployment, j *ct.Job) *api.Job {
 	j.AppID = api.ParseIDFromName(d.Name, "apps")
 	j.DeploymentID = api.ParseIDFromName(d.Name, "deployments")
 	j.ReleaseID = api.ParseIDFromName(d.NewRelease.Name, "releases")
@@ -204,7 +204,7 @@ func (s *GRPCSuite) createTestJob(c *C, d *api.ExpandedDeployment, j *ct.Job) *c
 		j.State = ct.JobStatePending
 	}
 	c.Assert(s.api.jobRepo.Add(j), IsNil)
-	return j
+	return api.NewJob(j)
 }
 
 func (s *GRPCSuite) createTestArtifact(c *C, in *ct.Artifact) *ct.Artifact {
@@ -223,6 +223,16 @@ func (s *GRPCSuite) createTestArtifact(c *C, in *ct.Artifact) *ct.Artifact {
 
 func (s *GRPCSuite) createTestScaleRequest(c *C, req *api.CreateScaleRequest) *api.ScaleRequest {
 	ctReq := req.ControllerType()
+	ctReq, err := s.api.formationRepo.AddScaleRequest(ctReq, false)
+	c.Assert(err, IsNil)
+	scale := api.NewScaleRequest(ctReq)
+	s.scaleRequestNameMap[scale.Name] = fmt.Sprintf("testScale%d", len(s.scaleRequestNameMap)+1)
+	return scale
+}
+
+func (s *GRPCSuite) createTestScaleRequestForDeployment(c *C, req *api.CreateScaleRequest, deploymentName string) *api.ScaleRequest {
+	ctReq := req.ControllerType()
+	ctReq.DeploymentID = api.ParseIDFromName(deploymentName, "deployments")
 	ctReq, err := s.api.formationRepo.AddScaleRequest(ctReq, false)
 	c.Assert(err, IsNil)
 	scale := api.NewScaleRequest(ctReq)
@@ -1307,6 +1317,7 @@ func (s *GRPCSuite) TestStreamDeploymentEvents(c *C) {
 	testRelease1 := s.createTestRelease(c, testApp1.Name, &api.Release{
 		Labels:    map[string]string{"i": "1"},
 		Artifacts: []string{testArtifact1.ID},
+		Processes: map[string]*api.ProcessType{"devnull": {Args: []string{"tail", "-f", "/dev/null"}, Service: "dev"}},
 	})
 	testDeployment1 := s.createTestDeployment(c, testRelease1.Name)
 
@@ -1340,13 +1351,21 @@ func (s *GRPCSuite) TestStreamDeploymentEvents(c *C) {
 	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
 	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeDeployment))
 
-	testJob1 := api.NewJob(s.createTestJob(c, testDeployment1, &ct.Job{}))
+	testJob1 := s.createTestJob(c, testDeployment1, &ct.Job{})
 	res, err = stream.Recv()
 	c.Assert(err, IsNil)
 	c.Assert(len(res.Events), Equals, 1)
 	c.Assert(res.Events[0].Parent, Equals, testJob1.Name)
 	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
 	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeJob))
+
+	testScale1 := s.createTestScaleRequestForDeployment(c, &api.CreateScaleRequest{Parent: testRelease1.Name, Config: &api.ScaleConfig{Processes: map[string]int32{"devnull": 1}}}, testDeployment1.Name)
+	res, err = stream.Recv()
+	c.Assert(err, IsNil)
+	c.Assert(len(res.Events), Equals, 1)
+	c.Assert(res.Events[0].Parent, Equals, testScale1.Name)
+	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
+	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeScaleRequest))
 
 	// TODO(jvatic): test streaming events with app id
 	// TODO(jvatic): test streaming events with deployment id and app id

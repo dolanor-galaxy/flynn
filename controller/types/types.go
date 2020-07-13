@@ -551,16 +551,17 @@ type Event struct {
 }
 
 type ExpandedEvent struct {
-	ID         int64               `json:"id,omitempty"`
-	AppID      string              `json:"app,omitempty"`
-	ObjectType EventType           `json:"object_type,omitempty"`
-	ObjectID   string              `json:"object_id,omitempty"`
-	UniqueID   string              `json:"-"`
-	Deployment *ExpandedDeployment `json:"deployment,omitempty"`
-	Job        *Job                `json:"job,omitempty"`
-	Data       json.RawMessage     `json:"-"`
-	Op         EventOp             `json:"-"`
-	CreatedAt  *time.Time          `json:"created_at,omitempty"`
+	ID           int64               `json:"id,omitempty"`
+	AppID        string              `json:"app,omitempty"`
+	ObjectType   EventType           `json:"object_type,omitempty"`
+	ObjectID     string              `json:"object_id,omitempty"`
+	UniqueID     string              `json:"-"`
+	Deployment   *ExpandedDeployment `json:"deployment,omitempty"`
+	Job          *Job                `json:"job,omitempty"`
+	ScaleRequest *ScaleRequest       `json:"scale_request,omitempty"`
+	Data         json.RawMessage     `json:"-"`
+	Op           EventOp             `json:"-"`
+	CreatedAt    *time.Time          `json:"created_at,omitempty"`
 }
 
 func (ee *ExpandedEvent) Event() *Event {

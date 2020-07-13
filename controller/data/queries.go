@@ -368,7 +368,9 @@ SELECT e.event_id, e.app_id, e.object_id, e.object_type, e.data, e.op, e.created
     FROM job_volumes
     WHERE job_volumes.job_id = j.job_id
     ORDER BY job_volumes.index
-  )
+  ),
+
+	s.scale_request_id, s.app_id, s.release_id, s.state, s.old_processes, s.new_processes, s.old_tags, s.new_tags, s.created_at, s.updated_at
 FROM events e
 LEFT OUTER JOIN deployments d
 	ON d.deployment_id = e.deployment_id
@@ -378,6 +380,8 @@ LEFT OUTER JOIN releases new_r
   ON d.new_release_id = new_r.release_id
 LEFT OUTER JOIN job_cache j
 	ON e.object_type = 'job' AND j.job_id::text = e.object_id
+LEFT OUTER JOIN scale_requests s
+	ON e.object_type = 'scale_request' AND s.scale_request_id::text = e.object_id
 WHERE e.event_id = $1
 LIMIT 1
 	`
@@ -416,7 +420,9 @@ SELECT e.event_id, e.app_id, e.object_id, e.object_type, e.data, e.op, e.created
     FROM job_volumes
     WHERE job_volumes.job_id = j.job_id
     ORDER BY job_volumes.index
-  )
+  ),
+
+	s.scale_request_id, s.app_id, s.release_id, s.state, s.old_processes, s.new_processes, s.old_tags, s.new_tags, s.created_at, s.updated_at
 FROM events e
 LEFT OUTER JOIN deployments d
 	ON d.deployment_id = e.deployment_id
@@ -426,6 +432,8 @@ LEFT OUTER JOIN releases new_r
   ON d.new_release_id = new_r.release_id
 LEFT OUTER JOIN job_cache j
 	ON e.object_type = 'job' AND j.job_id::text = e.object_id
+LEFT OUTER JOIN scale_requests s
+	ON e.object_type = 'scale_request' AND s.scale_request_id::text = e.object_id
 WHERE
   CASE WHEN array_length($2::text[], 1) > 0 THEN e.app_id::text = ANY($2::text[]) ELSE true END
 AND

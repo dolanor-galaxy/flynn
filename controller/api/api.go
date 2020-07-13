@@ -809,6 +809,14 @@ func NewEvent(from *ct.ExpandedEvent) *Event {
 		data = &Event_Job{
 			Job: NewJob(from.Job),
 		}
+	case "scale_request":
+		if from.ScaleRequest == nil {
+			return nil
+		}
+		parentName = fmt.Sprintf("apps/%s/releases/%s/scales/%s", from.ScaleRequest.AppID, from.ScaleRequest.ReleaseID, from.ScaleRequest.ID)
+		data = &Event_ScaleRequest{
+			ScaleRequest: NewScaleRequest(from.ScaleRequest),
+		}
 	}
 
 	var deploymentName string

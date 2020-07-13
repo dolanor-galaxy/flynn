@@ -647,6 +647,8 @@ message Event {
     ExpandedDeployment deployment = 7;
 
     Job job = 8;
+
+    ScaleRequest scale_request = 9;
   }
 }
 
