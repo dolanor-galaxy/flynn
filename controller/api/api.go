@@ -153,6 +153,14 @@ func ParseIDFromName(name string, resource string) string {
 	return idMap[resource]
 }
 
+func ParseEventTypeFilters(typeFilters []string) []ct.EventType {
+	ret := make([]ct.EventType, len(typeFilters))
+	for i, t := range typeFilters {
+		ret[i] = ct.EventType(t)
+	}
+	return ret
+}
+
 func NewControllerLabelFilters(from []*LabelFilter) []ct.LabelFilter {
 	to := make([]ct.LabelFilter, 0, len(from))
 	for _, f := range from {

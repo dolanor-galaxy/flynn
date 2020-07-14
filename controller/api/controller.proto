@@ -195,10 +195,14 @@ message StreamDeploymentEventsRequest {
   // resources. Resource names are supported for apps and deployments.
   repeated string name_filters = 3;
 
+  // Specifies an optional list of event types to return. The default is to
+  // return all event types related to deployments.
+  repeated string type_filters = 4;
+
   // When true, leaves the stream open and sends newly created resources
   // matching the filters until the stream is closed. page_token must not be
   // set.
-  bool stream_creates = 8;
+  bool stream_creates = 5;
 }
 
 message StreamDeploymentEventsResponse {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -889,10 +890,14 @@ func (g *grpcAPI) listDeploymentEvents(req *api.StreamDeploymentEventsRequest) (
 
 	appIDs := api.ParseIDsFromNameFilters(req.GetNameFilters(), "apps")
 	deploymentIDs := api.ParseIDsFromNameFilters(req.GetNameFilters(), "deployments")
+	objectTypes := api.ParseEventTypeFilters(req.GetTypeFilters())
+	if len(objectTypes) == 0 {
+		objectTypes = []ct.EventType{ct.EventTypeDeployment, ct.EventTypeScaleRequest, ct.EventTypeJob}
+	}
 	ctEvents, nextPageToken, err := g.eventRepo.ListPage(data.ListEventOptions{
 		PageToken:     *pageToken,
 		AppIDs:        appIDs,
-		ObjectTypes:   []ct.EventType{ct.EventTypeDeployment, ct.EventTypeJob},
+		ObjectTypes:   objectTypes,
 		DeploymentIDs: deploymentIDs,
 	})
 	if err != nil {
@@ -920,9 +925,13 @@ func (g *grpcAPI) StreamDeploymentEvents(req *api.StreamDeploymentEventsRequest,
 	if !unary {
 		appIDs := api.ParseIDsFromNameFilters(req.GetNameFilters(), "apps")
 		deploymentIDs := api.ParseIDsFromNameFilters(req.GetNameFilters(), "deployments")
+		objectTypes := api.ParseEventTypeFilters(req.GetTypeFilters())
+		if len(objectTypes) == 0 {
+			objectTypes = []ct.EventType{ct.EventTypeDeployment, ct.EventTypeScaleRequest, ct.EventTypeJob}
+		}
 		sub, err = g.subscribeEvents(&data.EventSubscriptionOpts{
 			AppIDs:        appIDs,
-			ObjectTypes:   []ct.EventType{ct.EventTypeDeployment, ct.EventTypeJob},
+			ObjectTypes:   objectTypes,
 			DeploymentIDs: deploymentIDs,
 		})
 		if err != nil {

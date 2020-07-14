@@ -236,7 +236,6 @@ func (s *GRPCSuite) createTestScaleRequestForDeployment(c *C, req *api.CreateSca
 	ctReq, err := s.api.formationRepo.AddScaleRequest(ctReq, false)
 	c.Assert(err, IsNil)
 	scale := api.NewScaleRequest(ctReq)
-	s.scaleRequestNameMap[scale.Name] = fmt.Sprintf("testScale%d", len(s.scaleRequestNameMap)+1)
 	return scale
 }
 
@@ -1333,46 +1332,72 @@ func (s *GRPCSuite) TestStreamDeploymentEvents(c *C) {
 		return stream, closeFunc, err
 	}
 
-	stream, closeFunc, err := streamEvents(&api.StreamDeploymentEventsRequest{
-		NameFilters:   []string{testDeployment1.Name},
-		StreamCreates: true,
-	})
-	defer closeFunc()
+	for _, nameFilters := range [][]string{
+		[]string{testDeployment1.Name},
+		[]string{testApp1.Name},
+		[]string{testApp1.Name, testDeployment1.Name},
+	} {
+		(func() {
+			stream, closeFunc, err := streamEvents(&api.StreamDeploymentEventsRequest{
+				NameFilters:   nameFilters,
+				StreamCreates: true,
+			})
+			defer closeFunc()
 
-	// we don't care about existing events
-	res, err := stream.Recv()
-	c.Assert(err, IsNil)
+			// we don't care about existing events
+			res, err := stream.Recv()
+			c.Assert(err, IsNil)
 
-	s.createTestDeploymentEvent(c, testDeployment1, &ct.DeploymentEvent{Status: "pending"})
-	res, err = stream.Recv()
-	c.Assert(err, IsNil)
-	c.Assert(len(res.Events), Equals, 1)
-	c.Assert(res.Events[0].Parent, Equals, testDeployment1.Name)
-	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
-	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeDeployment))
+			s.createTestDeploymentEvent(c, testDeployment1, &ct.DeploymentEvent{Status: "pending"})
+			res, err = stream.Recv()
+			c.Assert(err, IsNil)
+			c.Assert(len(res.Events), Equals, 1)
+			c.Assert(res.Events[0].Parent, Equals, testDeployment1.Name)
+			c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
+			c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeDeployment))
 
-	testJob1 := s.createTestJob(c, testDeployment1, &ct.Job{})
-	res, err = stream.Recv()
-	c.Assert(err, IsNil)
-	c.Assert(len(res.Events), Equals, 1)
-	c.Assert(res.Events[0].Parent, Equals, testJob1.Name)
-	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
-	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeJob))
+			testJob1 := s.createTestJob(c, testDeployment1, &ct.Job{})
+			res, err = stream.Recv()
+			c.Assert(err, IsNil)
+			c.Assert(len(res.Events), Equals, 1)
+			c.Assert(res.Events[0].Parent, Equals, testJob1.Name)
+			c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
+			c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeJob))
 
-	testScale1 := s.createTestScaleRequestForDeployment(c, &api.CreateScaleRequest{Parent: testRelease1.Name, Config: &api.ScaleConfig{Processes: map[string]int32{"devnull": 1}}}, testDeployment1.Name)
-	res, err = stream.Recv()
-	c.Assert(err, IsNil)
-	c.Assert(len(res.Events), Equals, 1)
-	c.Assert(res.Events[0].Parent, Equals, testScale1.Name)
-	c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
-	c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeScaleRequest))
+			testScale1 := s.createTestScaleRequestForDeployment(c, &api.CreateScaleRequest{Parent: testRelease1.Name, Config: &api.ScaleConfig{Processes: map[string]int32{"devnull": 1}}}, testDeployment1.Name)
+			res, err = stream.Recv()
+			c.Assert(err, IsNil)
+			c.Assert(len(res.Events), Equals, 1)
+			c.Assert(res.Events[0].Parent, Equals, testScale1.Name)
+			c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
+			c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeScaleRequest))
+		})()
+	}
 
-	// TODO(jvatic): test streaming events with app id
-	// TODO(jvatic): test streaming events with deployment id and app id
-	// TODO(jvatic): test streaming events with object type
-	// TODO(jvatic): test streaming events with deployment id and object type
-	// TODO(jvatic): test streaming events with app id and object type
-	// TODO(jvatic): test streaming events with deployment id and app id and object type
+	(func() {
+		stream, closeFunc, err := streamEvents(&api.StreamDeploymentEventsRequest{
+			NameFilters:   []string{testDeployment1.Name},
+			TypeFilters:   []string{string(ct.EventTypeJob)},
+			StreamCreates: true,
+		})
+		defer closeFunc()
+
+		// we don't care about existing events
+		res, err := stream.Recv()
+		c.Assert(err, IsNil)
+
+		s.createTestDeploymentEvent(c, testDeployment1, &ct.DeploymentEvent{Status: "pending"})
+
+		s.createTestScaleRequestForDeployment(c, &api.CreateScaleRequest{Parent: testRelease1.Name, Config: &api.ScaleConfig{Processes: map[string]int32{"devnull": 1}}}, testDeployment1.Name)
+
+		testJob1 := s.createTestJob(c, testDeployment1, &ct.Job{})
+		res, err = stream.Recv()
+		c.Assert(err, IsNil)
+		c.Assert(len(res.Events), Equals, 1)
+		c.Assert(res.Events[0].Parent, Equals, testJob1.Name)
+		c.Assert(res.Events[0].DeploymentName, Equals, testDeployment1.Name)
+		c.Assert(res.Events[0].Type, Equals, string(ct.EventTypeJob))
+	})()
 }
 
 func (s *GRPCSuite) TestStreamDeployments(c *C) {
