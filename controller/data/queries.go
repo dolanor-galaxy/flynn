@@ -545,8 +545,8 @@ WHERE app_id = $1 AND release_id = $2 AND deleted_at IS NULL`
 UPDATE formations SET deleted_at = now(), processes = NULL, updated_at = now()
 WHERE app_id = $1 AND deleted_at IS NULL`
 	scaleRequestInsertQuery = `
-INSERT INTO scale_requests (scale_request_id, app_id, release_id, state, old_processes, new_processes, old_tags, new_tags)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO scale_requests (scale_request_id, app_id, release_id, deployment_id, state, old_processes, new_processes, old_tags, new_tags)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING created_at, updated_at`
 	scaleRequestCancelQuery = `
 WITH updated AS (
@@ -619,8 +619,8 @@ SELECT
   )
 FROM job_cache WHERE job_id = $1`
 	jobInsertQuery = `
-INSERT INTO job_cache (cluster_id, job_id, host_id, app_id, release_id, process_type, state, meta, exit_status, host_error, run_at, restarts, args)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (job_id) DO UPDATE
+INSERT INTO job_cache (cluster_id, job_id, host_id, app_id, release_id, deployment_id, process_type, state, meta, exit_status, host_error, run_at, restarts, args)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (job_id) DO UPDATE
 SET cluster_id = $1, host_id = $3, state = $7, exit_status = $9, host_error = $10, run_at = $11, restarts = $12, args = $13, updated_at = now()
 RETURNING created_at, updated_at`
 	jobVolumeInsertQuery = `

@@ -142,6 +142,7 @@ func (r *FormationRepo) AddScaleRequest(req *ct.ScaleRequest, deleteFormation bo
 		req.ID,
 		req.AppID,
 		req.ReleaseID,
+		req.DeploymentID,
 		string(req.State),
 		req.OldProcesses,
 		req.NewProcesses,

@@ -61,6 +61,7 @@ func (r *JobRepo) Add(job *ct.Job) error {
 		job.HostID,
 		job.AppID,
 		job.ReleaseID,
+		deploymentID,
 		job.Type,
 		string(job.State),
 		job.Meta,
