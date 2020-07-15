@@ -981,8 +981,26 @@ ALTER TABLE http_routes ADD COLUMN disable_keep_alives boolean NOT NULL DEFAULT 
 				END IF;
 			END LOOP;
 		END $$`,
-		// TODO(jvatic): associate all existing scale events and scales with a deployment
-		// TODO(jvatic): convert all event.data to an expadned deployment where it is a deployment
+		// associate all existing scale events and scale_requests with a deployment
+		`DO $$
+		DECLARE
+			sr RECORD;
+			deployment uuid;
+		BEGIN
+			FOR sr IN SELECT * FROM scale_requests ORDER BY created_at DESC LOOP
+				SELECT INTO deployment deployment_id FROM deployments
+				WHERE app_id = sr.app_id
+					AND (old_release_id = sr.release_id OR new_release_id = sr.release_id)
+					AND created_at <= sr.created_at AND finished_at > sr.created_at
+				ORDER BY created_at DESC
+				LIMIT 1;
+
+				IF deployment IS NOT NULL THEN
+					UPDATE scale_requests SET deployment_id = deployment WHERE scale_request_id = sr.scale_request_id;
+					UPDATE events SET deployment_id = deployment WHERE object_type = 'scale_request' AND object_id = sr.scale_request_id::text;
+				END IF;
+			END LOOP;
+		END $$`,
 	)
 }
 
