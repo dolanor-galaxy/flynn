@@ -115,7 +115,8 @@ func (s *GRPCSuite) SetUpTest(c *C) {
 	c.Assert(s.db.Exec(`
 		TRUNCATE
 			apps, artifacts, deployments, events,
-			formations, releases, scale_requests
+			formations, releases, scale_requests,
+			job_cache
 		CASCADE
 	`), IsNil)
 	s.scaleRequestNameMap = make(map[string]string)

@@ -960,8 +960,7 @@ ALTER TABLE http_routes ADD COLUMN disable_keep_alives boolean NOT NULL DEFAULT 
 	migrations.Add(50,
 		`ALTER TABLE events ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
 		`ALTER TABLE scale_requests ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
-		`ALTER TABLE jobs ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
-		// TODO(jvatic): associate all existing job events and jobs with a deployment
+		`ALTER TABLE job_cache ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
 		// TODO(jvatic): associate all existing scale events and scales with a deployment
 		// TODO(jvatic): convert all event.data to an expadned deployment where it is a deployment
 	)
