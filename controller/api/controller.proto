@@ -624,6 +624,8 @@ message Event {
   // parent = "apps/APP_ID/deployments/DEPLOYMENT_ID"
   // when job is set:
   // parent = "jobs/UUID"
+  // when scale_request is set:
+  // parent = "apps/APP_ID/releases/RELEASE_ID/scales/SCALE_REQUEST_ID"
   string parent = 1;
 
   //  name = "events/EVENT_ID"
@@ -632,7 +634,7 @@ message Event {
   // deployment_name = "apps/APP_ID/deployments/DEPLOYMENT_ID"
   string deployment_name = 3;
 
-  // type = deployment | job
+  // type = deployment | job | scale_request
   string type = 4;
 
   enum EventOp {

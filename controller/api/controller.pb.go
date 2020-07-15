@@ -850,7 +850,7 @@ type StreamDeploymentEventsRequest struct {
 	// resources. Resource names are supported for apps and deployments.
 	NameFilters []string `protobuf:"bytes,3,rep,name=name_filters,json=nameFilters,proto3" json:"name_filters,omitempty"`
 	// Specifies an optional list of event types to return. The default is to
-	// return all events related to deployments.
+	// return all event types related to deployments.
 	TypeFilters []string `protobuf:"bytes,4,rep,name=type_filters,json=typeFilters,proto3" json:"type_filters,omitempty"`
 	// When true, leaves the stream open and sends newly created resources
 	// matching the filters until the stream is closed. page_token must not be
@@ -2747,12 +2747,14 @@ type Event struct {
 	// parent = "apps/APP_ID/deployments/DEPLOYMENT_ID"
 	// when job is set:
 	// parent = "jobs/UUID"
+	// when scale_request is set:
+	// parent = "apps/APP_ID/releases/RELEASE_ID/scales/SCALE_REQUEST_ID"
 	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
 	//  name = "events/EVENT_ID"
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// deployment_name = "apps/APP_ID/deployments/DEPLOYMENT_ID"
 	DeploymentName string `protobuf:"bytes,3,opt,name=deployment_name,json=deploymentName,proto3" json:"deployment_name,omitempty"`
-	// type = deployment | job
+	// type = deployment | job | scale_request
 	Type       string               `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
 	Op         Event_EventOp        `protobuf:"varint,5,opt,name=op,proto3,enum=flynn.api.v1.Event_EventOp" json:"op,omitempty"`
 	CreateTime *timestamp.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
