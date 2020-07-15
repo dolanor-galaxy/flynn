@@ -961,6 +961,26 @@ ALTER TABLE http_routes ADD COLUMN disable_keep_alives boolean NOT NULL DEFAULT 
 		`ALTER TABLE events ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
 		`ALTER TABLE scale_requests ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
 		`ALTER TABLE job_cache ADD COLUMN deployment_id uuid REFERENCES deployments (deployment_id)`,
+		// associate all existing job events and jobs with a deployment
+		`DO $$
+		DECLARE
+			job RECORD;
+			deployment uuid;
+		BEGIN
+			FOR job IN SELECT * FROM job_cache ORDER BY created_at DESC LOOP
+				SELECT INTO deployment deployment_id FROM deployments
+				WHERE app_id = job.app_id
+					AND (old_release_id = job.release_id OR new_release_id = job.release_id)
+					AND created_at <= job.created_at AND finished_at > job.created_at
+				ORDER BY created_at DESC
+				LIMIT 1;
+
+				IF deployment IS NOT NULL THEN
+					UPDATE job_cache SET deployment_id = deployment WHERE job_id = job.job_id;
+					UPDATE events SET deployment_id = deployment WHERE object_type = 'job' AND object_id = job.job_id::text;
+				END IF;
+			END LOOP;
+		END $$`,
 		// TODO(jvatic): associate all existing scale events and scales with a deployment
 		// TODO(jvatic): convert all event.data to an expadned deployment where it is a deployment
 	)
